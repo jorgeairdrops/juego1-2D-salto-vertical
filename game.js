@@ -23,33 +23,36 @@ let penguinCanvas = null;  // set after image loads
 function loadPenguinSprite(callback) {
   const img = new Image();
   img.onload = () => {
-    // Draw to offscreen canvas and remove the light-blue background
-    const oc = document.createElement('canvas');
-    oc.width  = img.width;
-    oc.height = img.height;
-    const octx = oc.getContext('2d');
-    octx.drawImage(img, 0, 0);
+    try {
+      // Remove the light-blue background via pixel manipulation
+      const oc = document.createElement('canvas');
+      oc.width  = img.width;
+      oc.height = img.height;
+      const octx = oc.getContext('2d');
+      octx.drawImage(img, 0, 0);
 
-    const imgData = octx.getImageData(0, 0, oc.width, oc.height);
-    const d = imgData.data;
-
-    // Sample background color from top-left corner pixel
-    const bgR = d[0], bgG = d[1], bgB = d[2];
-    const tol = 30; // tolerance for color matching
-
-    for (let i = 0; i < d.length; i += 4) {
-      if (Math.abs(d[i]   - bgR) < tol &&
-          Math.abs(d[i+1] - bgG) < tol &&
-          Math.abs(d[i+2] - bgB) < tol) {
-        d[i+3] = 0; // make transparent
+      const imgData = octx.getImageData(0, 0, oc.width, oc.height);
+      const d = imgData.data;
+      // Sample background color from top-left corner pixel
+      const bgR = d[0], bgG = d[1], bgB = d[2];
+      const tol = 35;
+      for (let i = 0; i < d.length; i += 4) {
+        if (Math.abs(d[i]   - bgR) < tol &&
+            Math.abs(d[i+1] - bgG) < tol &&
+            Math.abs(d[i+2] - bgB) < tol) {
+          d[i+3] = 0;
+        }
       }
+      octx.putImageData(imgData, 0, 0);
+      penguinCanvas = oc;
+    } catch (e) {
+      // getImageData blocked (e.g. local file security) — use raw image
+      penguinCanvas = img;
     }
-    octx.putImageData(imgData, 0, 0);
-    penguinCanvas = oc;
-    callback();
+    callback(); // always called regardless of success/failure
   };
   img.onerror = () => { penguinCanvas = null; callback(); };
-  img.src = 'penguin pixel art.png';
+  img.src = 'penguin%20pixel%20art.png'; // encode space to ensure loading
 }
 
 // Power-up orb icons (8×8)
@@ -634,7 +637,7 @@ class World {
   }
 
   _checkCollisions(penguin) {
-    if (penguin.dead) return;
+    if (penguin.dead) return 0;
 
     const pb = penguin.bounds();
     const prevFeetY = pb.y + pb.h - penguin.vy * (1 / 60);
