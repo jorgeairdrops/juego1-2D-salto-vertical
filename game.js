@@ -16,35 +16,40 @@ const PLATFORM_MARGIN = 30;
 const METERS_PER_PX  = 1 / 60;
 const MAGNET_RADIUS  = 120;
 
-// ── Sprites ─────────────────────────────────────────────────
-const W = '#1a1a2e'; // dark navy
-const F = '#f0f0f0'; // white belly
-const E = '#ff4466'; // red eye
-const B = '#ff9900'; // orange beak/feet
-const _ = null;
+// ── Penguin image (loaded from PNG, background removed) ──────
+let penguinCanvas = null;  // set after image loads
 
-const PENGUIN_SPRITE = [
-  [_,_,W,W,W,W,W,_,_,_],
-  [_,W,F,F,F,F,F,W,_,_],
-  [_,W,F,E,F,E,F,W,_,_],
-  [_,W,F,F,F,F,F,W,_,_],
-  [_,_,B,B,B,B,_,_,_,_],
-  [W,W,F,F,F,F,W,W,_,_],
-  [W,F,F,F,F,F,F,W,_,_],
-  [W,F,F,F,F,F,F,W,_,_],
-  [W,F,F,F,F,F,F,W,_,_],
-  [_,W,W,F,F,W,W,_,_,_],
-  [_,_,W,F,F,W,_,_,_,_],
-  [_,_,B,W,W,B,_,_,_,_],
-  [_,_,B,B,B,B,_,_,_,_],
-  [_,_,_,_,_,_,_,_,_,_],
-];
+function loadPenguinSprite(callback) {
+  const img = new Image();
+  img.onload = () => {
+    // Draw to offscreen canvas and remove the light-blue background
+    const oc = document.createElement('canvas');
+    oc.width  = img.width;
+    oc.height = img.height;
+    const octx = oc.getContext('2d');
+    octx.drawImage(img, 0, 0);
 
-// Penguin facing left (flip cols)
-function flipSprite(sprite) {
-  return sprite.map(row => [...row].reverse());
+    const imgData = octx.getImageData(0, 0, oc.width, oc.height);
+    const d = imgData.data;
+
+    // Sample background color from top-left corner pixel
+    const bgR = d[0], bgG = d[1], bgB = d[2];
+    const tol = 30; // tolerance for color matching
+
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i]   - bgR) < tol &&
+          Math.abs(d[i+1] - bgG) < tol &&
+          Math.abs(d[i+2] - bgB) < tol) {
+        d[i+3] = 0; // make transparent
+      }
+    }
+    octx.putImageData(imgData, 0, 0);
+    penguinCanvas = oc;
+    callback();
+  };
+  img.onerror = () => { penguinCanvas = null; callback(); };
+  img.src = 'penguin pixel art.png';
 }
-const PENGUIN_LEFT = flipSprite(PENGUIN_SPRITE);
 
 // Power-up orb icons (8×8)
 const ORB_INVINC = [
@@ -373,12 +378,13 @@ class Platform {
 class Penguin {
   constructor() { this.reset(); }
   reset() {
-    this.wx = CANVAS_W / 2 - 15;
-    this.wy = CANVAS_H - 200;
+    this.w = 48;
+    this.h = 54;
+    this.wx = CANVAS_W / 2 - this.w / 2;
+    // Spawn seated on the first platform (CANVAS_H - 180), then launch upward
+    this.wy = CANVAS_H - 180 - this.h - 2;
     this.vx = 0;
-    this.vy = 0;
-    this.w = 10 * SPRITE_SCALE;
-    this.h = 13 * SPRITE_SCALE;
+    this.vy = JUMP_FORCE; // initial bounce so player lands on platforms immediately
     this.onGround = false;
     this.facing = 1; // 1=right, -1=left
     this.activePowerUp = null;
@@ -390,7 +396,7 @@ class Penguin {
     this.frameCount = 0;
   }
   bounds() {
-    return { x: this.wx + 3, y: this.wy + 2, w: this.w - 6, h: this.h - 2 };
+    return { x: this.wx + 8, y: this.wy + 4, w: this.w - 16, h: this.h - 6 };
   }
   cx() { return this.wx + this.w / 2; }
   cy() { return this.wy + this.h / 2; }
@@ -471,14 +477,15 @@ class Penguin {
   }
 
   render(r, camY) {
+    const sy = this.wy - camY;
+
     if (this.dead) {
-      // spin effect while dying
-      const sy = this.wy - camY;
       r.ctx.save();
       r.ctx.translate(this.wx + this.w / 2, sy + this.h / 2);
       r.ctx.rotate(this.frameCount * 0.2);
-      r.ctx.translate(-(this.w / 2), -(this.h / 2));
-      r.sprite(PENGUIN_SPRITE, 0, 0, SPRITE_SCALE);
+      if (penguinCanvas) {
+        r.ctx.drawImage(penguinCanvas, -this.w / 2, -this.h / 2, this.w, this.h);
+      }
       r.ctx.restore();
       return;
     }
@@ -486,9 +493,18 @@ class Penguin {
     // Invincibility blink
     if (this.isInvincible() && Math.floor(this.frameCount / 5) % 2 === 0) return;
 
-    const sy = this.wy - camY;
-    const sprite = this.facing < 0 ? PENGUIN_LEFT : PENGUIN_SPRITE;
-    r.sprite(sprite, this.wx, sy, SPRITE_SCALE);
+    if (penguinCanvas) {
+      r.ctx.save();
+      if (this.facing < 0) {
+        // Mirror horizontally
+        r.ctx.translate(this.wx + this.w, sy);
+        r.ctx.scale(-1, 1);
+        r.ctx.drawImage(penguinCanvas, 0, 0, this.w, this.h);
+      } else {
+        r.ctx.drawImage(penguinCanvas, this.wx, sy, this.w, this.h);
+      }
+      r.ctx.restore();
+    }
 
     // Super jump trail
     if (this.superJumpReady) {
@@ -501,8 +517,8 @@ class Penguin {
 
     // Double jump wing hint
     if (this.activePowerUp === 'doubleJump' && !this.onGround) {
-      r.rect(this.wx - 5, sy + 15, 5, 8, '#00ffff');
-      r.rect(this.wx + this.w, sy + 15, 5, 8, '#00ffff');
+      r.rect(this.wx - 6, sy + 18, 6, 10, '#00ffff');
+      r.rect(this.wx + this.w, sy + 18, 6, 10, '#00ffff');
     }
 
     // Magnet ring
@@ -538,14 +554,14 @@ class World {
   }
 
   _init() {
-    // First platform right under spawn
+    // First platform — penguin spawns on this
     this.platforms.push(new Platform(CANVAS_W / 2 - 55, CANVAS_H - 180, 110, 'static'));
     this.generatedUpTo = CANVAS_H - 180;
-    // A few guaranteed safe platforms above
-    for (let i = 0; i < 5; i++) {
-      const y = this.generatedUpTo - rand(70, 90);
-      const x = rand(PLATFORM_MARGIN, CANVAS_W - 90 - PLATFORM_MARGIN);
-      this.platforms.push(new Platform(x, y, 90, 'static'));
+    // 10 guaranteed safe platforms as tutorial zone (no deadly, no moving)
+    for (let i = 0; i < 10; i++) {
+      const y = this.generatedUpTo - rand(65, 95);
+      const x = rand(PLATFORM_MARGIN, CANVAS_W - 100 - PLATFORM_MARGIN);
+      this.platforms.push(new Platform(x, y, 100, 'static'));
       this.generatedUpTo = y;
     }
   }
@@ -906,7 +922,7 @@ class Game {
     // Demo penguin
     const t = performance.now() / 1000;
     const demoY = 300 + Math.sin(t * 3) * 20;
-    r.sprite(PENGUIN_SPRITE, CANVAS_W / 2 - 15, demoY, SPRITE_SCALE);
+    if (penguinCanvas) r.ctx.drawImage(penguinCanvas, CANVAS_W / 2 - 24, demoY, 48, 54);
 
     // Platform under demo
     r.rect(CANVAS_W / 2 - 50, 330, 100, PLATFORM_H, '#4ecca3');
@@ -951,5 +967,7 @@ class Game {
 
 // ── Boot ──────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  new Game().start();
+  loadPenguinSprite(() => {
+    new Game().start();
+  });
 });
