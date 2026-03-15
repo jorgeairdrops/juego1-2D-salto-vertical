@@ -17,6 +17,7 @@ const METERS_PER_PX  = 1 / 60;
 const MAGNET_RADIUS  = 120;
 
 // ── Penguin image (loaded from PNG, background removed) ──────
+const _ = null; // transparent pixel used in all sprite arrays
 let penguinCanvas = null;  // set after image loads
 
 function loadPenguinSprite(callback) {
